@@ -1,0 +1,159 @@
+---
+title: "Analyse single cell des MSC starvé et non starvé"
+author: "DUPUY Mathis"
+date: "10/7/2022"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(SingleCellExperiment)
+library(Seurat)
+library(tidyverse)
+library(Matrix)
+library(scales)
+library(cowplot)
+library(RCurl)
+
+setwd("/home/stagiaire/Documents/Mathis")
+load("data/merged_filtered_seurat.RData")
+load("data/seurat_filtered.RData")
+metadata <- merged_seurat@meta.data
+filtered_metadata <- filtered_seurat@meta.data
+```
+## Methodes
+
+### scRNA-seq Data Processing
+
+#### scRNA-seq
+
+L'analyse des données est effectuée à travers le package R Seurate (version x.x.x). 
+
+#### Quality Control
+  
+L'étape du controle qualité nous permet de filtrer les cellules de mauvaises
+qualités afin de faciliter la suite des analyses.
+
+##### Nombre de cellules
+
+```{r, echo=FALSE, warning=FALSE}
+metadata %>% 
+  ggplot(aes(x=sample, fill=sample)) + 
+  geom_bar() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  ggtitle("NCells")
+```
+
+Nous pouvons observer que chaque échantillons est composé d'un peu moins de 1500
+cellules.
+
+##### Nombre de transcrit par cellule
+
+En règle général on s'attend à ce qu'une cellule de bonne qualité contienne
+plus de 500 transcrits.
+
+```{r, echo=FALSE, warning=FALSE}
+metadata %>% 
+  ggplot(aes(color=sample, x=nUMI, fill= sample)) + 
+  geom_density(alpha = 0.2) + 
+  scale_x_log10() + 
+  theme_classic() +
+  ylab("Cell density")
+```
+
+Dans notre cas on observe que le nombre de transcrit moyen par cellule pour nos 
+deux groupes est de l'ordre des $10^{4}$.
+
+##### Nombre de gènes détécté par cellule
+
+En principe nous devons observer un pic unique pour des données de bonne qualité
+témoignant de la similarité entre nos cellules.
+
+```{r, echo=FALSE, warning=FALSE}
+metadata %>% 
+  ggplot(aes(color=sample, x=nGene, fill= sample)) + 
+  geom_density(alpha = 0.2) + 
+  theme_classic() +
+  scale_x_log10()
+```
+
+
+##### Compléxité
+ 
+```{r, echo=FALSE, warning=FALSE}
+metadata %>%
+  ggplot(aes(x=log10GenesPerUMI, color = sample, fill=sample)) +
+  geom_density(alpha = 0.2) +
+  theme_classic()
+```
+ 
+##### Pourcentage de mitochondrie par cellule
+ 
+Les cellules de faibles qualité ont un taux de mitochondrie supérieur à 20%.
+ 
+```{r, echo=FALSE, warning=FALSE}
+metadata %>% 
+  ggplot(aes(color=sample, x=mitoRatio, fill=sample)) + 
+  geom_density(alpha = 0.2) + 
+  scale_x_log10() + 
+  theme_classic()
+```
+ 
+##### Effets de bords
+
+Afin d'éviter de surfiltrer nos données nous pouvons vérifier sur un graphique
+le nombre de gènes contre les nombre de transcrits colorés en fonction du taux
+de mitochondrie par cellule.
+
+```{r, echo=FALSE, warning=FALSE}
+metadata %>% 
+  ggplot(aes(x=nUMI, y=nGene, color=mitoRatio)) + 
+  geom_point() + 
+  #scale_colour_gradient(low = "gray90", high = "black") +
+  scale_colour_gradient2(low = "blue4", high = "red", mid = "white", midpoint = 0.20) +
+  #stat_smooth(method=lm) +
+  scale_x_log10() + 
+  scale_y_log10() + 
+  theme_classic() +
+  #geom_vline(xintercept = 15000) +
+  #geom_hline(yintercept = 3000) +
+  facet_wrap(~sample)
+```
+
+Nous réalisons que la majeure partie des cellules de qualitées se trouvent dans le
+cadran supérieur droit formé par nos filtres. Ceux-ci semblent donc adaptés à
+notre jeu de données.
+
+#### Après filtrage
+
+```{r, echo=FALSE, warning=FALSE}
+filtered_metadata %>% 
+  ggplot(aes(x=sample, fill=sample)) + 
+  geom_bar() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  ggtitle("NCells")
+```
+
+Après filtrage nous réalisons que le jeu de donnée non starvé contenait le plus
+de donnée de mauvaise qualité. En effet les filtres ont rejeté près d'un tiers
+des cellules non starvé.
+
+```{r, echo=FALSE, warning=FALSE}
+filtered_metadata %>% 
+  ggplot(aes(x=nUMI, y=nGene, color=mitoRatio)) + 
+  geom_point() + 
+  scale_colour_gradient2(low = "blue4", high = "red", mid = "white", midpoint = 0.20) +
+  stat_smooth(method=lm) +
+  scale_x_log10() + 
+  scale_y_log10() + 
+  theme_classic() +
+  facet_wrap(~sample)
+```
+
