@@ -84,7 +84,6 @@ metadata %>%
   scale_x_log10() + 
   theme_classic() +
   ylab("Cell density") +
-  geom_vline(xintercept = 15000)
 dev.off()
 
 # Visualize the distribution of genes detected per cell via histogram
@@ -94,7 +93,6 @@ metadata %>%
   geom_density(alpha = 0.2) + 
   theme_classic() +
   scale_x_log10() + 
-  geom_vline(xintercept = 3000)
 dev.off()
 
 # Visualize the overall complexity of the gene expression by visualizing the genes detected per UMI (novelty score)
@@ -126,16 +124,14 @@ metadata %>%
   scale_x_log10() + 
   scale_y_log10() + 
   theme_classic() +
-  geom_vline(xintercept = 15000) +
-  geom_hline(yintercept = 3000) +
   facet_wrap(~sample)
 dev.off()
 
 # Filter out low quality cells using selected thresholds - these will change with experiment
 filtered_seurat <- subset(x = merged_seurat, 
-                          subset= (nUMI >= 15000) & 
-                            (nGene >= 3000) & 
-                            (log10GenesPerUMI > 0.80) & 
+                          subset= #(nUMI >= 15000) & 
+                            #(nGene >= 3000) & 
+                            #(log10GenesPerUMI > 0.80) & 
                             (mitoRatio < 0.20))
 
 filtered_metadata <- filtered_seurat@meta.data
@@ -149,8 +145,6 @@ filtered_metadata %>%
   scale_x_log10() + 
   scale_y_log10() + 
   theme_classic() +
-  geom_vline(xintercept = 15000) +
-  geom_hline(yintercept = 3000) +
   facet_wrap(~sample)
 dev.off()
 
@@ -181,8 +175,6 @@ filtered_metadata_2 %>%
   scale_x_log10() + 
   scale_y_log10() + 
   theme_classic() +
-  geom_vline(xintercept = 15000) +
-  geom_hline(yintercept = 3000) +
   facet_wrap(~sample)
 dev.off()
 

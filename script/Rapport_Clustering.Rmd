@@ -1,0 +1,107 @@
+---
+title: "Clustering des MSC starvé et non starvé"
+author: "DUPUY Mathis"
+date: "10/11/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(SingleCellExperiment)
+library(Seurat)
+library(tidyverse)
+library(Matrix)
+library(scales)
+library(cowplot)
+library(RCurl)
+
+setwd("/home/stagiaire/Documents/Mathis")
+load("data/seurat_phase.RData")
+load("data/seurat_phase_reg.RData")
+```
+
+## Clustering
+
+Maintenant que nos données ont été filtré nous allons pouvoir les explorer via
+diverse méthodes de clustering.
+
+### ACP
+
+Dans un premier temps nous réalisons une ACP de l'ensemble de nos cellules,
+starvé et non starvé réunis, afin de déterminer les différences entre ces
+deux groupes.
+
+```{r, echo=FALSE, warning=FALSE}
+
+# Visualize the PCA, grouping by cell sample
+DimPlot(seurat_phase,
+        reduction = "pca",
+        group.by= "sample")
+DimPlot(seurat_phase,
+        reduction = "pca",
+        group.by= "sample",
+        split.by = "sample")
+```
+
+Nous pouvons observer qu'une partie de la variance entre nos données s'explique
+par la condition starvé ou non starvé.
+
+Essayons de regarder le cycle cellulaire de nos cellules.
+```{r, echo=FALSE, warning=FALSE}
+# Visualize the PCA, grouping by cell cycle phase
+DimPlot(seurat_phase,
+        reduction = "pca",
+        group.by= "Phase")
+DimPlot(seurat_phase,
+        reduction = "pca",
+        group.by = "Phase",
+        split.by = "sample")
+```
+
+Nous constatons que la variance entre les deux groupes serait dû à leur phase
+dans le cycle cellulaire. En effet les cellules du groupes non starvé semblent 
+pouvoir éffectuer un cycle complet tandis que les cellules starvé semblent
+être bloqué en G1.
+
+Par conséquence nous décidons de réaliser une regression sur les phases du cycle
+cellulaire.
+
+```{r, echo=FALSE, warning=FALSE}
+# Visualize the PCA, grouping by cell cycle phase
+DimPlot(seurat_phase_reg,
+        reduction = "pca",
+        group.by= "Phase")
+DimPlot(seurat_phase_reg,
+        reduction = "pca",
+        group.by = "Phase",
+        split.by = "sample")
+```
+
+### UMAP
+
+#### Sans regression
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+seurat_phase <- FindNeighbors(seurat_phase, dims = 1:20)
+seurat_phase <- FindClusters(seurat_phase, resolution = 0.5)
+
+seurat_phase <- RunUMAP(seurat_phase, dims = 1:20)
+
+DimPlot(seurat_phase,
+        reduction = "umap",
+        split.by = "sample")
+```
+
+#### Avec regression
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+seurat_phase_reg <- FindNeighbors(seurat_phase_reg, dims = 1:20)
+seurat_phase_reg <- FindClusters(seurat_phase_reg, resolution = 0.5)
+
+seurat_phase_reg <- RunUMAP(seurat_phase_reg, dims = 1:20)
+
+DimPlot(seurat_phase_reg,
+        reduction = "umap",
+        split.by = "sample")
+```

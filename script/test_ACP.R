@@ -72,6 +72,8 @@ seurat_phase <- CellCycleScoring(seurat_phase,
 # Perform PCA and color by cell cycle phase
 seurat_phase <- RunPCA(seurat_phase, features = VariableFeatures(object = seurat_phase))
 
+save(seurat_phase, file="data/seurat_phase.RData")
+
 # Visualize the PCA, grouping by cell cycle phase
 jpeg("test_acp.jpg")
 DimPlot(seurat_phase,
@@ -87,9 +89,59 @@ seurat_phase <- RunPCA(seurat_phase, features = VariableFeatures(seurat_phase), 
 # When running a PCA on only cell cycle genes, cells no longer separate by cell-cycle phase
 seurat_phase <- RunPCA(seurat_phase, features = c(s_genes, g2m_genes))
 
+
+# Plot the PCA colored by cell cycle phase
 jpeg("test_acp_reg.jpg")
 DimPlot(seurat_phase,
         reduction = "pca",
         group.by= "Phase")
 dev.off()
 
+jpeg("test_acp_reg.jpg")
+DimPlot(seurat_phase,
+        reduction = "pca",
+        group.by= "sample")
+dev.off()
+
+seurat_phase_reg <- seurat_phase
+save(seurat_phase_reg, file="data/seurat_phase_reg.RData")
+
+### Test du jours ###
+
+seurat_phase_reg <- FindNeighbors(seurat_phase_reg, dims = 1:20)
+seurat_phase_reg <- FindClusters(seurat_phase_reg, resolution = 0.5)
+
+seurat_phase_reg <- RunUMAP(seurat_phase_reg, dims = 1:20)
+
+jpeg("test_UMAP_reg_20.jpg")
+DimPlot(seurat_phase_reg,
+        reduction = "umap",
+        split.by = "sample")
+dev.off()
+
+
+
+# Split seurat object by condition to perform cell cycle scoring and SCT on all samples
+split_seurat <- SplitObject(seurat_phase, split.by = "sample")
+
+split_seurat <- split_seurat[c("nn_strv", "strv")]
+
+split_seurat$nn_strv <- FindNeighbors(split_seurat$nn_strv, dims = 1:20)
+split_seurat$nn_strv <- FindClusters(split_seurat$nn_strv, resolution = 0.5)
+
+split_seurat$nn_strv <- RunUMAP(split_seurat$nn_strv, dims = 1:20)
+
+jpeg("test_UMAP_nn_strv.jpg")
+DimPlot(split_seurat$nn_strv,
+        reduction = "umap")
+dev.off()
+
+split_seurat$strv <- FindNeighbors(split_seurat$strv, dims = 1:20)
+split_seurat$strv <- FindClusters(split_seurat$strv, resolution = 0.5)
+
+split_seurat$strv <- RunUMAP(split_seurat$strv, dims = 1:20)
+
+jpeg("test_UMAP_strv.jpg")
+DimPlot(split_seurat$strv,
+        reduction = "umap")
+dev.off()
