@@ -1,0 +1,341 @@
+---
+title: "Analyse_Single_Cell_RNAseq_MSC"
+author: "DUPUY Mathis"
+date: "11/30/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(Seurat)
+library(ggplot2)
+library(sctransform)
+library(SingleCellExperiment)
+library(tidyverse)
+library(Matrix)
+library(scales)
+library(cowplot)
+library(RCurl)
+
+setwd("/home/stagiaire/Documents/Mathis/script/data")
+
+load("merged_seurat.RData")
+seurat_phase <- readRDS("global_phase.rds")
+seurat_integrated <- readRDS("global_integrated.rds")
+
+
+```
+
+## Exploration du jeu de donnée globale
+
+```{r, echo=FALSE}
+ggplot(merged_seurat@meta.data,aes(sample)) +
+  geom_bar() + 
+  labs(title = "Nombre de cellule par condition")
+```
+
+Le jeu de donnée initiale présente près de 3000 cellules répartie entre la 
+condition controle et la condition starvé.
+```{r, echo=FALSE}
+ggplot(seurat_phase@meta.data,aes(sample)) +
+  geom_bar() +
+  labs(title = "Nombre de cellule par condition après filtrage")
+```
+
+L'étape de contrôle qualité a révélé qu'une partie des cellules étaient de
+faible qualité et nécéssité un filtrage. Les cellules présentant moins de
+15000 transcrits, moins de 3500 gènes et un taux de gène mitochondriau supérieur
+à 20% ont été retiré.
+Il ne reste maintenant plus que 2000 cellules.
+```{r, echo=FALSE}
+DimPlot(seurat_integrated, split.by = "sample") +
+  labs(title = "UMAP des MSC séparées par condition")
+```
+
+```{r, echo=FALSE}
+ggplot(seurat_phase@meta.data,aes(sample)) +
+  geom_bar(aes(color=Phase, fill=Phase), position = "fill") +
+  scale_y_continuous(labels = label_percent()) +
+  labs(title = "Proportion de cellule en phase G1, G2 et S par condition",
+       x = "condition", y = "proportion de cellule")
+```
+
+L'annotation des cellules en fonction de leur position dans le cycle cellulaire
+nous permet de constate que près de 40% des cellules controles sont en cycle 
+contre 15% des cellules starvées.
+
+## UMAP
+```{r, echo=FALSE, message = FALSE}
+# Determine the K-nearest neighbor graph
+seurat_integrated <- FindNeighbors(object = seurat_integrated, 
+                                dims = 1:40)
+
+# Determine the clusters for various resolutions                                
+seurat_integrated <- FindClusters(object = seurat_integrated,
+                               resolution = c(0.4, 0.6, 0.8, 1.0, 1.4))
+# Assign identity of clusters
+Idents(object = seurat_integrated) <- "integrated_snn_res.0.8"
+
+# Plot the UMAP
+DimPlot(seurat_integrated,
+        reduction = "umap",
+        label = TRUE,
+        label.size = 6)
+
+# Plot the UMAP
+DimPlot(seurat_integrated,
+        reduction = "umap",
+        label = TRUE,
+        label.size = 6,
+        split.by = "sample")
+
+# Extract identity and sample information from seurat object to determine the number of cells per cluster per sample
+n_cells <- FetchData(seurat_integrated, 
+                     vars = c("ident", "orig.ident")) %>%
+  dplyr::count(ident, orig.ident) %>%
+  tidyr::spread(ident, n)
+
+# View table
+knitr::kable(n_cells)
+
+cluster <- c(rep("cluster_0",2),rep("cluster_1",2),rep("cluster_2",2),
+             rep("cluster_3",2),rep("cluster_4",2),rep("cluster_5",2),
+             rep("cluster_6",2),rep("cluster_7",2))
+condition <- rep(c("ctrl","strv"),8)
+value <- c(199,246,143,205,138,178,28,277,
+           89,182,61,110,123,40,99,8)
+df <- data.frame(cluster,condition,value)
+
+ggplot(df, aes(fill=condition, y=value, x=cluster)) + 
+  geom_bar(position="fill", stat="identity")
+```
+
+## PC
+```{r, echo=FALSE, message=FALSE}
+# Defining the information in the seurat object of interest
+columns <- c(paste0("PC_", 1:16),
+             "ident",
+             "UMAP_1", "UMAP_2")
+
+# Extracting this data from the seurat object
+pc_data <- FetchData(seurat_integrated, 
+                     vars = columns)
+# Adding cluster label to center of cluster on UMAP
+umap_label <- FetchData(seurat_integrated, 
+                        vars = c("ident", "UMAP_1", "UMAP_2"))  %>%
+  group_by(ident) %>%
+  summarise(x=mean(UMAP_1), y=mean(UMAP_2))
+
+# Plotting a UMAP plot for each of the PCs
+map(paste0("PC_", 1:4), function(pc){
+  ggplot(pc_data, 
+         aes(UMAP_1, UMAP_2)) +
+    geom_point(aes_string(color=pc), 
+               alpha = 0.7) +
+    scale_color_gradient(guide = FALSE, 
+                         low = "grey90", 
+                         high = "blue")  +
+    geom_text(data=umap_label, 
+              aes(label=ident, x, y)) +
+    ggtitle(pc)
+}) %>% 
+  plot_grid(plotlist = .)
+
+# Printing out the most variable genes driving PCs
+print(x = seurat_integrated[["pca"]], 
+      dims = 1:4, 
+      nfeatures = 5)
+```
+
+Les cluster 6 et 7 étant princpalement expliquées par le cycle cellulaire nous
+allons relancer l'analyse en effectuant une regression sur cet effet biologique.
+
+## Regression
+
+
+```{r}
+setwd("/home/stagiaire/Documents/Mathis/script")
+
+seurat_integrated <- readRDS("regression/regressed_seurat.rds")
+
+# Plot the UMAP
+DimPlot(seurat_integrated,
+        reduction = "umap",
+        label = TRUE,
+        label.size = 6)
+
+# Determine the K-nearest neighbor graph
+seurat_integrated <- FindNeighbors(object = seurat_integrated, 
+                                dims = 1:40)
+
+# Determine the clusters for various resolutions                                
+seurat_integrated <- FindClusters(object = seurat_integrated,
+                               resolution = c(0.4, 0.6, 0.8, 1.0, 1.4))
+
+# Assign identity of clusters
+Idents(object = seurat_integrated) <- "integrated_snn_res.0.6"
+
+# Plot the UMAP
+DimPlot(seurat_integrated,
+        reduction = "umap",
+        label = TRUE,
+        label.size = 6)
+
+# Plot the UMAP
+DimPlot(seurat_integrated,
+        reduction = "umap",
+        label = TRUE,
+        label.size = 6,
+        split.by = "sample")
+
+# Extract identity and sample information from seurat object to determine the number of cells per cluster per sample
+n_cells <- FetchData(seurat_integrated, 
+                     vars = c("ident", "orig.ident")) %>%
+  dplyr::count(ident, orig.ident) %>%
+  tidyr::spread(ident, n)
+
+# View table
+knitr::kable(n_cells)
+
+cluster <- c(rep("cluster_0",2),rep("cluster_1",2),rep("cluster_2",2),
+             rep("cluster_3",2),rep("cluster_4",2),rep("cluster_5",2),
+             rep("cluster_6",2),rep("cluster_7",2))
+condition <- rep(c("ctrl","strv"),8)
+value <- c(193,241,171,200,129,218,77,264,
+           111,149,102,49,61,83,36,42)
+df <- data.frame(cluster,condition,value)
+
+ggplot(df, aes(fill=condition, y=value, x=cluster)) + 
+  geom_bar(position="fill", stat="identity")
+```
+
+Après regression on peut identifier 6 cluster principaux.
+Le cluster 3 semble être spécifique à la population de cellule starvé. Seul 25%
+des cellules qui le compose sont issues de la population controle.
+
+```{r}
+# Defining the information in the seurat object of interest
+columns <- c(paste0("PC_", 1:16),
+             "ident",
+             "UMAP_1", "UMAP_2")
+
+# Extracting this data from the seurat object
+pc_data <- FetchData(seurat_integrated, 
+                     vars = columns)
+# Adding cluster label to center of cluster on UMAP
+umap_label <- FetchData(seurat_integrated, 
+                        vars = c("ident", "UMAP_1", "UMAP_2"))  %>%
+  group_by(ident) %>%
+  summarise(x=mean(UMAP_1), y=mean(UMAP_2))
+
+# Plotting a UMAP plot for each of the PCs
+map(paste0("PC_", 1:4), function(pc){
+  ggplot(pc_data, 
+         aes(UMAP_1, UMAP_2)) +
+    geom_point(aes_string(color=pc), 
+               alpha = 0.7) +
+    scale_color_gradient(guide = FALSE, 
+                         low = "grey90", 
+                         high = "blue")  +
+    geom_text(data=umap_label, 
+              aes(label=ident, x, y)) +
+    ggtitle(pc)
+}) %>% 
+  plot_grid(plotlist = .)
+
+# Printing out the most variable genes driving PCs
+print(x = seurat_integrated[["pca"]], 
+      dims = 1:4, 
+      nfeatures = 5)
+```
+
+Le cluster 3 semble expliqué une partie de la variance, on le retrouve en PC1 et 3. Nous allons donc observer les marqueurs qui lui sont associées.
+
+## Enrichissement
+
+```{r Gene Ontology Enrichment, echo = FALSE, error = TRUE}
+# find all markers of cluster 3
+library(devtools)
+library(enrichR)
+websiteLive <- TRUE #paramètre nécessaire pour permettre la connexion à enrichR
+
+DEenrichRPlot(seurat_integrated, 
+              ident.1 = 3,
+              balanced = TRUE,
+              max.genes = 1512,
+              enrich.database = "GO_Biological_Process_2021",
+              num.pathway = 10)
+```
+
+Nous effectuons une analyse d'expression différentielle pour les cellules du cluster 3 puis nous recherchons les processus biologiques pour les quelles elles pourraient être impliquées.
+
+Le résultat nous révele que les cellules du cluster 3 surexprime des gènes liées dans la formation de matrices extracellulaire et de tissus osseux.
+
+Nous pouvons donc supposer que ces cellules sont plus aptes à la différenciation
+en osteocyte.
+
+```{r}
+DEenrichRPlot(seurat_integrated, 
+              ident.1 = 5,
+              balanced = TRUE,
+              max.genes = 1851,
+              enrich.database = "GO_Biological_Process_2021",
+              num.pathway = 10)
+```
+
+En comparant la répartition des cellules avant et après regression j'ai émis l'hypothèse que les cellules liées au cluster 5 étaient les cellules en cycle cellulaire.
+
+La recherche de fonction biologique semble confirmer cette hypothèse.
+
+```{r}
+DEenrichRPlot(seurat_integrated, 
+              ident.1 = 0,
+              balanced = TRUE,
+              max.genes = 1851,
+              enrich.database = "GO_Biological_Process_2021",
+              num.pathway = 10)
+
+DEenrichRPlot(seurat_integrated, 
+              ident.1 = 1,
+              balanced = TRUE,
+              max.genes = 1851,
+              enrich.database = "GO_Biological_Process_2021",
+              num.pathway = 10)
+
+DEenrichRPlot(seurat_integrated, 
+              ident.1 = 2,
+              balanced = TRUE,
+              max.genes = 1851,
+              enrich.database = "GO_Biological_Process_2021",
+              num.pathway = 10)
+
+DEenrichRPlot(seurat_integrated, 
+              ident.1 = 4,
+              balanced = TRUE,
+              max.genes = 1851,
+              enrich.database = "GO_Biological_Process_2021",
+              num.pathway = 10)
+
+DEenrichRPlot(seurat_integrated, 
+              ident.1 = 6,
+              balanced = TRUE,
+              max.genes = 1851,
+              enrich.database = "GO_Biological_Process_2021",
+              num.pathway = 10)
+```
+
+## Identification
+
+```{r}
+seurat_integrated <- RenameIdents(object = seurat_integrated,
+                                  "3" = "Pseudo Osteocyte",
+                                  "5" = "Proliferating MSC")
+
+# Plot the UMAP
+DimPlot(object = seurat_integrated, 
+        reduction = "umap", 
+        label = TRUE,
+        label.size = 3,
+        repel = TRUE)
+```
